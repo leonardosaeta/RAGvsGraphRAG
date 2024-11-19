@@ -1,62 +1,54 @@
 from neo4j import GraphDatabase
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 
-# Initialize Neo4j connection
-neo4j_uri = "bolt://localhost:7687"
-neo4j_user = "neo4j"
-neo4j_password = "your_neo4j_password"
-driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+# Connect to Neo4j database
+class KnowledgeGraphExample:
 
-# Load local model and tokenizer
-model_name = "meta-llama/Llama-3.2-3B-Instruct"  # or another model available locally
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+    def __init__(self, uri, user, password):
+        self.driver = GraphDatabase.driver(uri, auth=(user, password))
 
-# Define function to retrieve related content from Neo4j
-def get_related_content(query):
-    with driver.session() as session:
-        results = session.run(
-            """
-            MATCH (n:Guide {name: 'Installation Guide'})-[:RELATED_TO|PREREQUISITE_FOR*]->(related)
-            RETURN n.content AS main_content, collect(related.content) AS related_content
-            """
-        )
-        record = results.single()
-        if record:
-            main_content = record["main_content"]
-            related_content = record["related_content"]
-            return main_content, related_content
-        return None, None
+    def close(self):
+        self.driver.close()
 
-# Function to generate answer using local LLM
-def generate_response(main_content, related_content, user_query):
-    context = f"Main Content: {main_content}\n\nRelated Information:\n"
-    context += "\n".join(related_content)
-    prompt = f"User Query: {user_query}\n\n{context}\n\nAnswer the query based on the information provided above."
+    def create_graph(self):
+        with self.driver.session() as session:
+            # Clear the database
+            session.run("MATCH (n) DETACH DELETE n")
+            
+            # Create nodes and relationships
+            session.run("""
+            CREATE (a:Person {name: 'Alice', role: 'Engineer'})
+            CREATE (b:Person {name: 'Bob', role: 'Manager'})
+            CREATE (c:Project {name: 'Project X', deadline: '2024-12-31'})
+            CREATE (d:Project {name: 'Project Y', deadline: '2025-06-30'})
+            CREATE (a)-[:WORKS_ON]->(c)
+            CREATE (b)-[:MANAGES]->(c)
+            CREATE (b)-[:MANAGES]->(d)
+            """)
 
-    # Tokenize the prompt
-    inputs = tokenizer(prompt, return_tensors="pt")
-    # Generate a response
-    outputs = model.generate(inputs.input_ids, max_length=150, temperature=0.7)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return response
+    def query_graph(self):
+        with self.driver.session() as session:
+            # Query the graph
+            result = session.run("""
+            MATCH (person:Person)-[:WORKS_ON]->(project:Project)
+            RETURN person.name AS worker, project.name AS project
+            """)
+            # Print results
+            print("People working on projects:")
+            for record in result:
+                print(f"{record['worker']} is working on {record['project']}")
 
-# Main function
-def main():
-    # User query
-    user_query = "How do I install the software?"
+# Set your Neo4j connection details
+NEO4J_URI = "bolt://localhost:7687"
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "teste123"
 
-    # Retrieve relevant information from Neo4j
-    main_content, related_content = get_related_content(user_query)
-
-    if main_content and related_content:
-        # Generate response using local LLM
-        answer = generate_response(main_content, related_content, user_query)
-        print("Response:", answer)
-    else:
-        print("No relevant information found.")
-
-# Run the main function
 if __name__ == "__main__":
-    main()
+    graph = KnowledgeGraphExample(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+    
+    try:
+        print("Creating the graph...")
+        graph.create_graph()
+        print("Querying the graph...")
+        graph.query_graph()
+    finally:
+        graph.close()
