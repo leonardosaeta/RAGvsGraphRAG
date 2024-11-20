@@ -1,7 +1,7 @@
 import requests
 
 def main():
-    api_url = "http://10.100.0.34:5000/generate"
+    api_url = "http://10.100.0.34:5000/generate" # IP adress of a computer running the Llama
 
     instruction = "You're a helpful assistant. Return only the answer to the question."
     question = "What is the tallest building in the world?"
